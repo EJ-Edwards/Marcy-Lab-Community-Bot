@@ -9,12 +9,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # bot.py/rooms.py live in this nested folder, not a proper Python package (hyphens in names)
-GAME_DIR = os.path.join(os.path.dirname(__file__), "NetNaval-main", "NetNaval-main")
+GAME_DIR = os.path.join(os.path.dirname(__file__), "NetNaval-main")
 sys.path.insert(0, GAME_DIR)
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", case_insensitive=True, intents=intents)
 
 
 @bot.event

@@ -11,6 +11,33 @@ INACTIVITY_LIMIT = timedelta(days=2)
 THREAD_AUTO_ARCHIVE = 1440  # minutes (24h), Discord's max short-lived option
 
 
+ALPHABET = "ABCDEFGHIJ"
+
+
+def parse_position(pos):
+    """Return (row, col) for a position like 'B7', or None if invalid."""
+    pos = pos.strip()
+    if len(pos) < 2 or pos[0].upper() not in ALPHABET or not pos[1:].isdigit():
+        return None
+    col = int(pos[1:]) - 1
+    if not 0 <= col < 10:
+        return None
+    return ALPHABET.index(pos[0].upper()), col
+
+
+def parse_ship_positions(positions, board):
+    """Validate exactly 3 distinct, free positions. Returns (cells, error)."""
+    if len(positions) != 3:
+        return None, "You must place exactly 3 ships."
+    cells = []
+    for pos in positions:
+        cell = parse_position(pos)
+        if cell is None or board[cell[0]][cell[1]] != "~" or cell in cells:
+            return None, f"❌ Invalid position: `{pos}`"
+        cells.append(cell)
+    return cells, None
+
+
 def create_board():
     return [["~"]*10 for _ in range(10)]
 
@@ -116,6 +143,22 @@ class NetNaval(commands.Cog):
             except (discord.Forbidden, discord.HTTPException):
                 pass
 
+    async def cog_check(self, ctx):
+        if ctx.guild is None:
+            raise commands.NoPrivateMessage()
+        return True
+
+    async def cog_command_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f"❌ Missing `{error.param.name}`. Use `!NetNaval` to see how commands work.")
+        elif isinstance(error, (commands.BadArgument, commands.NoPrivateMessage)):
+            await ctx.send("❌ Invalid input. Use `!NetNaval` to see how commands work.")
+        elif isinstance(error, commands.CommandInvokeError):
+            await ctx.send("⚠️ Something went wrong. Please try again.")
+            raise error
+        else:
+            raise error
+
     # ------------------------------------------------------------------
     # Misc
     # ------------------------------------------------------------------
@@ -144,7 +187,40 @@ class NetNaval(commands.Cog):
     # ------------------------------------------------------------------
     # Solo mode
     # ------------------------------------------------------------------
-    @commands.command(aliases=["netnaval"])
+    @commands.command(name="netnaval")
+    async def netnaval(self, ctx):
+        """Show the NetNaval menu with the available commands."""
+        embed = discord.Embed(
+            title="🚢 NetNaval" or "netnaval",
+            description="Welcome aboard! Here's what you can do next:",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(
+            name="Play",
+            value=(
+                "`!start` - Solo game against the bot\n"
+                "`!challenge @user` - Challenge a member (or `!create` for an open lobby)\n"
+                "`!join <PIN>` - Join a room with a PIN"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="In a game thread",
+            value=(
+                "`!place A1 B2 C3` - Place your 3 ships\n"
+                "`!fire B7` - Fire at a position\n"
+                "`!stop` - End the game and close the thread"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Other",
+            value="`!ping` - Check if the API is awake\n`!credits` - About NetNaval",
+            inline=False,
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command()
     async def start(self, ctx):
         """Start a solo game against the bot in a new private thread."""
         thread = await create_game_thread(ctx, f"NetNaval solo - {ctx.author.name}")
@@ -221,29 +297,23 @@ class NetNaval(commands.Cog):
     # ------------------------------------------------------------------
     @commands.command()
     async def place(self, ctx, *positions):
-        alphabet = "ABCDEFGHIJ"
         room = Room.get_room_by_thread(ctx.channel.id)
 
         if room:
             if ctx.author.id not in room.players:
                 await ctx.send("❌ You're not part of this game.")
                 return
-            if len(positions) != 3:
-                await ctx.send("You must place exactly 3 ships.")
+            if room.ships[ctx.author.id]:
+                await ctx.send("❌ You already placed your ships.")
                 return
             board = room.boards[ctx.author.id]
-            ships = room.ships[ctx.author.id]
-            for pos in positions:
-                try:
-                    row = alphabet.index(pos[0].upper())
-                    col = int(pos[1:]) - 1
-                    if board[row][col] != "~":
-                        raise ValueError
-                except (IndexError, ValueError):
-                    await ctx.send(f"❌ Invalid position: `{pos}`")
-                    return
+            cells, error = parse_ship_positions(positions, board)
+            if error:
+                await ctx.send(error)
+                return
+            for row, col in cells:
                 board[row][col] = "S"
-                ships.append((row, col))
+                room.ships[ctx.author.id].append((row, col))
             room.touch()
             await ctx.send("✅ Ships placed! **Your board:**")
             await render(ctx, board)
@@ -256,19 +326,15 @@ class NetNaval(commands.Cog):
         if game["player_id"] != ctx.author.id:
             await ctx.send("❌ You're not part of this game.")
             return
-        if len(positions) != 3:
-            await ctx.send("You must place exactly 3 ships.")
+        if game["ships_player"]:
+            await ctx.send("❌ You already placed your ships.")
             return
         board = game["board_player"]
-        for pos in positions:
-            try:
-                row = alphabet.index(pos[0].upper())
-                col = int(pos[1:]) - 1
-                if board[row][col] != "~":
-                    raise ValueError
-            except (IndexError, ValueError):
-                await ctx.send(f"❌ Invalid position: `{pos}`")
-                return
+        cells, error = parse_ship_positions(positions, board)
+        if error:
+            await ctx.send(error)
+            return
+        for row, col in cells:
             board[row][col] = "S"
             game["ships_player"].append((row, col))
         game["last_activity"] = datetime.now(timezone.utc)
@@ -277,10 +343,15 @@ class NetNaval(commands.Cog):
 
     @commands.command()
     async def fire(self, ctx, position):
-        alphabet = "ABCDEFGHIJ"
         room = Room.get_room_by_thread(ctx.channel.id)
 
         if room:
+            if len(room.players) < 2:
+                await ctx.send("❗ Waiting for an opponent to join.")
+                return
+            if not all(room.ships[p] for p in room.players):
+                await ctx.send("❗ Both players must place their ships first.")
+                return
             if ctx.author.id != room.get_current_player():
                 await ctx.send("❗ It's not your turn!")
                 return
@@ -288,12 +359,11 @@ class NetNaval(commands.Cog):
             board_opponent = room.boards[opponent_id]
             radar = room.radars[ctx.author.id]
             ships_opponent = room.ships[opponent_id]
-            try:
-                row = alphabet.index(position[0].upper())
-                col = int(position[1:]) - 1
-            except (IndexError, ValueError):
-                await ctx.send("❌ Invalid position.")
+            cell = parse_position(position)
+            if cell is None:
+                await ctx.send("❌ Invalid position. Example: `!fire B7`")
                 return
+            row, col = cell
             if radar[row][col] in ["X", "O"]:
                 await ctx.send("❗ Already fired there.")
                 return
@@ -324,12 +394,14 @@ class NetNaval(commands.Cog):
         if game["player_id"] != ctx.author.id:
             await ctx.send("❌ You're not part of this game.")
             return
-        try:
-            row = alphabet.index(position[0].upper())
-            col = int(position[1:]) - 1
-        except (IndexError, ValueError):
+        if not game["ships_player"]:
+            await ctx.send("❗ Place your ships first: `!place A1 B2 C3`")
+            return
+        cell = parse_position(position)
+        if cell is None:
             await ctx.send("❌ Invalid position. Example: `!fire B7`")
             return
+        row, col = cell
         board_radar = game["board_radar"]
         if board_radar[row][col] in ["X", "O"]:
             await ctx.send("❗ Already fired there.")

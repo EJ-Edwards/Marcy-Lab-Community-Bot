@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetNaval</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <h1>NetNaval</h1>
+    <p>Battleship Game for Discord (Player vs Bot)</p>
+</header>
+
+<main>
+
+    <section id="overview">
+        <h2>Overview</h2>
+        <p>
+            <strong>NetNaval</strong> is a turn-based Battleship game played entirely in Discord.
+            The bot renders emoji-based boards and supports single-player (PvE) gameplay against an AI opponent. It also has a PVP mode where if you want you can play with friends and other people online.
+        </p>
+    </section>
+
+    <section id="gameplay">
+        <h2>Game Flow</h2>
+        <ol>
+            <li>Start a new game</li>
+            <li>Place your ships</li>
+            <li>Fire at enemy coordinates</li>
+            <li>Sink all enemy ships to win</li>
+        </ol>
+    </section>
+
+    <section id="commands">
+        <h2>Commands</h2>
+        <ul>
+            <li><code>!start</code> — Start a new game</li>
+            <li><code>!place A1 B2 C3</code> — Place exactly 3 ships</li>
+            <li><code>!fire B7</code> — Fire at the enemy</li>
+            <li><code>!credits</code> — View game credits & documentation link</li>
+        </ul>
+        <p>
+            <strong>Rows:</strong> A–J<br>
+            <strong>Columns:</strong> 1–10
+        </p>
+    </section>
+
+    <section id="boards">
+        <h2>Boards Explained</h2>
+        <p>The game uses two different boards to ensure fair gameplay:</p>
+
+        <ul>
+            <li>
+                <strong>Your Board (Defense)</strong><br>
+                Shows your ships, hits taken, and bot misses.
+            </li>
+            <li>
+                <strong>Radar Board (Offense)</strong><br>
+                Shows only where <em>you</em> have fired: hits and misses. Enemy ships are never shown.
+            </li>
+        </ul>
+    </section>
+
+    <section id="symbols">
+        <h2>Board Symbols</h2>
+        <ul>
+            <li>🟦 — Water (Unknown)</li>
+            <li>🚢 — Your Ship</li>
+            <li>💥 — Hit</li>
+            <li>⚪ — Miss</li>
+        </ul>
+        <p>
+            The top row displays <strong>columns (1–10)</strong> and the left side displays <strong>rows (A–J)</strong>.
+        </p>
+    </section>
+
+    <section id="winning">
+        <h2>Winning & Losing</h2>
+        <ul>
+            <li>🏆 Win by sinking all enemy ships</li>
+            <li>💀 Lose if the bot sinks all your ships</li>
+        </ul>
+    </section>
+
+    <section id="tips">
+        <h2>Strategy Tips</h2>
+        <ul>
+            <li>Spread ships apart to avoid fast losses</li>
+            <li>Use the radar board to avoid firing twice in the same spot</li>
+            <li>Think in patterns when searching for ships</li>
+        </ul>
+    </section>
+
+</main>
+
+<footer>
+    <p>
+        &copy; 2025
+        <a href="https://ej-edwards.github.io/Portfolio-Website/" target="_blank" rel="noopener noreferrer">
+            Eric Edwards
+        </a>
+    </p>
+</footer>
+
+</body>
+</html>

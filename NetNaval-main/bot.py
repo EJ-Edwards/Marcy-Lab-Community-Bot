@@ -7,6 +7,7 @@ from discord.ext import commands, tasks
 
 from rooms import Room
 
+VERSION = "2026-10-21-private-placement"
 INACTIVITY_LIMIT = timedelta(days=2)
 THREAD_AUTO_ARCHIVE = 1440  # minutes (24h), Discord's max short-lived option
 
@@ -218,6 +219,7 @@ class NetNaval(commands.Cog):
             value="`!ping` - Check if the API is awake\n`!credits` - About NetNaval",
             inline=False,
         )
+        embed.set_footer(text=f"NetNaval build: {VERSION}")
         await ctx.send(embed=embed)
 
     @commands.command()
@@ -490,4 +492,5 @@ class NetNaval(commands.Cog):
 
 
 async def setup(bot):
+    print(f"NetNaval loaded, build {VERSION}")
     await bot.add_cog(NetNaval(bot))

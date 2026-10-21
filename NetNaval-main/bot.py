@@ -297,6 +297,8 @@ class NetNaval(commands.Cog):
     # ------------------------------------------------------------------
     @commands.command()
     async def place(self, ctx, *positions):
+        # allow "B5, A4, C4" as well as "B5 A4 C4"
+        positions = " ".join(positions).replace(",", " ").split()
         room = Room.get_room_by_thread(ctx.channel.id)
 
         if room:
@@ -315,8 +317,26 @@ class NetNaval(commands.Cog):
                 board[row][col] = "S"
                 room.ships[ctx.author.id].append((row, col))
             room.touch()
-            await ctx.send("✅ Ships placed! **Your board:**")
-            await render(ctx, board)
+            # Hide the coordinates from the opponent and show the board only via DM
+            try:
+                await ctx.message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            try:
+                await ctx.author.send("✅ Ships placed! **Your board:**")
+                await render(ctx.author, board)
+                await ctx.send(f"✅ {ctx.author.mention} placed their ships. Your board was sent by DM.")
+            except (discord.Forbidden, discord.HTTPException):
+                await ctx.send(
+                    f"✅ {ctx.author.mention} placed their ships. "
+                    "I couldn't DM you your board - enable DMs from server members to see it."
+                )
+            others_ready = all(room.ships[p] for p in room.players)
+            if len(room.players) == 2 and others_ready:
+                first = ctx.guild.get_member(room.get_current_player())
+                await ctx.send(
+                    f"⚔️ Both fleets are ready! {first.mention if first else 'The host'} fires first with `!fire B7`."
+                )
             return
 
         game = self.solo_games.get(ctx.channel.id)

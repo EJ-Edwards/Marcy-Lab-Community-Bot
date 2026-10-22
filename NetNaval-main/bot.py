@@ -7,7 +7,7 @@ from discord.ext import commands, tasks
 
 from rooms import Room
 
-VERSION = "2026-10-21-private-placement-v2"
+VERSION = "2026-10-21-private-placement-dm-v3"
 INACTIVITY_LIMIT = timedelta(days=2)
 THREAD_AUTO_ARCHIVE = 1440  # minutes (24h), Discord's max short-lived option
 
@@ -131,6 +131,8 @@ class NetNaval(commands.Cog):
                 pass
 
     async def cog_check(self, ctx):
+        if ctx.guild is None and ctx.command and ctx.command.name == "place":
+            return True
         if ctx.guild is None:
             raise commands.NoPrivateMessage()
         return True
@@ -194,7 +196,8 @@ class NetNaval(commands.Cog):
         embed.add_field(
             name="In a game thread",
             value=(
-                "`!place A1 B2 C3` - Place your 3 ships\n"
+                "`!place A1 B2 C3` - Place ships in a solo thread\n"
+                "Multiplayer: DM me `!place <PIN> A1 B2 C3`\n"
                 "`!fire B7` - Fire at a position\n"
                 "`!stop` - End the game and close the thread"
             ),
@@ -266,7 +269,8 @@ class NetNaval(commands.Cog):
             await ctx.send(f"⚔️ {ctx.author.mention} challenged {opponent.mention} in {thread.mention}!")
             await thread.send(
                 f"⚔️ {opponent.mention}, you've been challenged by {ctx.author.mention}!\n"
-                "Both players place ships with `!place A1 B2 C3`."
+                f"To place ships privately, DM me: `!place {room.pin} A1 B2 C3`. "
+                "Do not enter ship coordinates in this thread."
             )
         else:
             await ctx.send(f"✅ Room created! PIN: {room.pin}\nThread: {thread.mention}")
@@ -291,7 +295,10 @@ class NetNaval(commands.Cog):
         thread = self.bot.get_channel(room.thread_id) if room.thread_id else None
         if thread:
             await thread.add_user(ctx.author)
-            await thread.send(f"✅ {ctx.author.mention} joined! Both players place ships with `!place A1 B2 C3`.")
+            await thread.send(
+                f"✅ {ctx.author.mention} joined! Both players place ships privately by DM: "
+                f"`!place {room.pin} A1 B2 C3`. Do not enter ship coordinates in this thread."
+            )
         await ctx.send(f"✅ Joined room {pin}!")
 
     # ------------------------------------------------------------------
@@ -299,24 +306,41 @@ class NetNaval(commands.Cog):
     # ------------------------------------------------------------------
     @commands.command()
     async def place(self, ctx, *positions):
-        # allow "B5, A4, C4" as well as "B5 A4 C4"
+        # Allow comma-separated coordinates as well as space-separated coordinates.
         positions = " ".join(positions).replace(",", " ").split()
-        room = Room.get_room_by_thread(ctx.channel.id)
+        room = None
+        if ctx.guild is None and positions:
+            room = Room.get_room(positions[0])
+            if room:
+                positions = positions[1:]
+            else:
+                await ctx.send("❌ No active multiplayer room has that PIN.")
+                return
+        elif ctx.guild is not None:
+            room = Room.get_room_by_thread(ctx.channel.id)
 
         if room:
             if ctx.author.id not in room.players:
                 await ctx.send("❌ You're not part of this game.")
                 return
-            try:
-                await ctx.message.delete()
-            except discord.Forbidden:
-                await ctx.send(
-                    "❌ I can't hide your ship placement. Please give me Manage Messages "
-                    "permission in this thread before placing ships."
+            if ctx.guild is not None:
+                try:
+                    await ctx.message.delete()
+                except (discord.Forbidden, discord.HTTPException):
+                    try:
+                        await ctx.author.send(
+                            f"⚠️ Your placement command was sent in the shared game thread and "
+                            f"could not be hidden. Please delete it manually. To place ships "
+                            f"privately, DM me `!place {room.pin} A1 B2 C3`."
+                        )
+                    except (discord.Forbidden, discord.HTTPException):
+                        await ctx.send(
+                            "❌ Ship placement must be sent to me by DM, not in the game thread."
+                        )
+                    return
+                await ctx.author.send(
+                    f"Please place ships privately by DM: `!place {room.pin} A1 B2 C3`."
                 )
-                return
-            except discord.HTTPException:
-                await ctx.send("❌ I couldn't hide your placement message, so your ships were not placed.")
                 return
             if room.ships[ctx.author.id]:
                 await ctx.send("❌ You already placed your ships.")
@@ -330,21 +354,28 @@ class NetNaval(commands.Cog):
                 board[row][col] = "S"
                 room.ships[ctx.author.id].append((row, col))
             room.touch()
-            try:
-                await ctx.author.send("✅ Ships placed! **Your board:**")
-                await render(ctx.author, board)
-                await ctx.send(f"✅ {ctx.author.mention} placed their ships. Your board was sent by DM.")
-            except (discord.Forbidden, discord.HTTPException):
+            both_ready = len(room.players) == 2 and all(room.ships[player_id] for player_id in room.players)
+            if both_ready:
                 await ctx.send(
-                    f"✅ {ctx.author.mention} placed their ships. "
-                    "I couldn't DM you your board - enable DMs from server members to see it."
+                    "✅ Ships placed! Both fleets are ready. The host fires first with `!fire B7`. "
+                    "**Your board:**"
                 )
-            others_ready = all(room.ships[p] for p in room.players)
-            if len(room.players) == 2 and others_ready:
-                first = ctx.guild.get_member(room.get_current_player())
-                await ctx.send(
-                    f"⚔️ Both fleets are ready! {first.mention if first else 'The host'} fires first with `!fire B7`."
-                )
+            else:
+                await ctx.send("✅ Ships placed! **Your board:**")
+            await render(ctx, board)
+            if both_ready:
+                first_id = room.get_current_player()
+                thread = self.bot.get_channel(room.thread_id) if room.thread_id else None
+                if thread:
+                    first = ctx.guild.get_member(first_id) if ctx.guild else None
+                    await thread.send(
+                        f"⚔️ Both fleets are ready! "
+                        f"{first.mention if first else 'The host'} fires first with `!fire B7`."
+                    )
+            return
+
+        if ctx.guild is None:
+            await ctx.send("For multiplayer, DM me `!place <PIN> A1 B2 C3`.")
             return
 
         game = self.solo_games.get(ctx.channel.id)

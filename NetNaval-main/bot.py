@@ -7,7 +7,7 @@ from discord.ext import commands, tasks
 
 from rooms import Room
 
-VERSION = "2026-10-21-private-placement"
+VERSION = "2026-10-21-private-placement-v2"
 INACTIVITY_LIMIT = timedelta(days=2)
 THREAD_AUTO_ARCHIVE = 1440  # minutes (24h), Discord's max short-lived option
 
@@ -71,21 +71,13 @@ async def render(ctx, board, hide_ships=False):
 
 
 async def create_game_thread(ctx, name, invite_ids=None):
-    """Create a private, temporary thread for a game. Falls back to a public
-    thread if the guild doesn't support private threads (requires boost level 2)."""
-    try:
-        thread = await ctx.channel.create_thread(
-            name=name,
-            type=discord.ChannelType.private_thread,
-            auto_archive_duration=THREAD_AUTO_ARCHIVE,
-            invitable=False,
-        )
-    except (discord.Forbidden, discord.HTTPException):
-        thread = await ctx.channel.create_thread(
-            name=name,
-            type=discord.ChannelType.public_thread,
-            auto_archive_duration=THREAD_AUTO_ARCHIVE,
-        )
+    """Create a private game thread; never expose a game in a public fallback."""
+    thread = await ctx.channel.create_thread(
+        name=name,
+        type=discord.ChannelType.private_thread,
+        auto_archive_duration=THREAD_AUTO_ARCHIVE,
+        invitable=False,
+    )
     await thread.add_user(ctx.author)
     for user_id in invite_ids or []:
         member = ctx.guild.get_member(user_id)
@@ -225,7 +217,14 @@ class NetNaval(commands.Cog):
     @commands.command()
     async def start(self, ctx):
         """Start a solo game against the bot in a new private thread."""
-        thread = await create_game_thread(ctx, f"NetNaval solo - {ctx.author.name}")
+        try:
+            thread = await create_game_thread(ctx, f"NetNaval solo - {ctx.author.name}")
+        except (discord.Forbidden, discord.HTTPException):
+            await ctx.send(
+                "❌ I couldn't create a private game thread. Check that I have permission "
+                "to create private threads in this channel."
+            )
+            return
         board_bot = create_board()
         ships_bot = []
         place_bot_ships(board_bot, ships_bot)
@@ -256,9 +255,16 @@ class NetNaval(commands.Cog):
             await ctx.send("❌ You can't challenge yourself.")
             return
 
-        room = Room(ctx.author.id)
         invite_ids = [opponent.id] if opponent else []
-        thread = await create_game_thread(ctx, f"NetNaval - {ctx.author.name}", invite_ids)
+        try:
+            thread = await create_game_thread(ctx, f"NetNaval - {ctx.author.name}", invite_ids)
+        except (discord.Forbidden, discord.HTTPException):
+            await ctx.send(
+                "❌ I couldn't create a private game thread. No public game was created. "
+                "Check that I have permission to create private threads in this channel."
+            )
+            return
+        room = Room(ctx.author.id)
         room.thread_id = thread.id
 
         if opponent:
@@ -307,6 +313,17 @@ class NetNaval(commands.Cog):
             if ctx.author.id not in room.players:
                 await ctx.send("❌ You're not part of this game.")
                 return
+            try:
+                await ctx.message.delete()
+            except discord.Forbidden:
+                await ctx.send(
+                    "❌ I can't hide your ship placement. Please give me Manage Messages "
+                    "permission in this thread before placing ships."
+                )
+                return
+            except discord.HTTPException:
+                await ctx.send("❌ I couldn't hide your placement message, so your ships were not placed.")
+                return
             if room.ships[ctx.author.id]:
                 await ctx.send("❌ You already placed your ships.")
                 return
@@ -319,11 +336,6 @@ class NetNaval(commands.Cog):
                 board[row][col] = "S"
                 room.ships[ctx.author.id].append((row, col))
             room.touch()
-            # Hide the coordinates from the opponent and show the board only via DM
-            try:
-                await ctx.message.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
             try:
                 await ctx.author.send("✅ Ships placed! **Your board:**")
                 await render(ctx.author, board)

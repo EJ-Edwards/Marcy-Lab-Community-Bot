@@ -52,21 +52,15 @@ def place_bot_ships(board, ships, count=3):
 
 
 async def render(ctx, board, hide_ships=False):
-    numbers = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-    letters = ["🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭","🇮","🇯"]
-    display = "⬛ " + " ".join(numbers) + "\n"
-    for i, row in enumerate(board):
-        display += letters[i]
-        for cell in row:
-            if cell == "~":
-                display += "🟦"
-            elif cell == "S":
-                display += "🟦" if hide_ships else "🚢"
-            elif cell == "X":
-                display += "💥"
-            elif cell == "O":
-                display += "⚪"
-        display += "\n"
+    lines = ["   " + "".join(f"{col:>3}" for col in range(1, 11))]
+    symbols = {"~": "~", "S": "S", "X": "X", "O": "o"}
+    for row_index, row in enumerate(board):
+        cells = [
+            "~" if hide_ships and cell == "S" else symbols.get(cell, "?")
+            for cell in row
+        ]
+        lines.append(f"{ALPHABET[row_index]}  " + "".join(f"{cell:>3}" for cell in cells))
+    display = "```text\n" + "\n".join(lines) + "\n```\n`~` water · `S` ship · `X` hit · `o` miss"
     await ctx.send(display)
 
 

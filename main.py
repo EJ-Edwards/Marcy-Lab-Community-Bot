@@ -18,9 +18,23 @@ GAMES = {
 for folder in GAMES.values():
     sys.path.insert(0, folder)
 
+UTILITIES = {
+    "modmail_bot": os.path.join(os.path.dirname(__file__), "Mod-Mail"),
+}
 
-async def load_game(bot, module_name, folder):
-    spec = importlib.util.spec_from_file_location(module_name, os.path.join(folder, "bot.py"))
+
+async def load_module(bot, module_name, folder, *, package=False):
+    module_path = os.path.join(folder, "bot.py")
+    if package:
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            module_path,
+            submodule_search_locations=[folder],
+        )
+    else:
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load bot module from {folder}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
@@ -42,8 +56,14 @@ async def main():
     if not token:
         raise RuntimeError("DISCORD_TOKEN is not set. Add it to a .env file or environment variable.")
     async with bot:
-        for module_name, folder in GAMES.items():
-            await load_game(bot, module_name, folder)
+        for modules in (GAMES, UTILITIES):
+            for module_name, folder in modules.items():
+                await load_module(
+                    bot,
+                    module_name,
+                    folder,
+                    package=module_name == "modmail_bot",
+                )
         await bot.start(token)
 
 

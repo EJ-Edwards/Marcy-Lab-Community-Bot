@@ -12,16 +12,11 @@ load_dotenv()
 # Game folders contain hyphens, so they aren't importable packages. Each game has its own
 # bot.py, so load them by file path under unique module names.
 GAMES = {
-    "netnaval_bot": os.path.join(os.path.dirname(__file__), "NetNaval-main"),
-    "tictactoe_bot": os.path.join(os.path.dirname(__file__), "Tic-Tac-Toe"),
+    "netnaval_bot": os.path.join(os.path.dirname(__file__), "Games", "NetNaval-main"),
+    "tictactoe_bot": os.path.join(os.path.dirname(__file__), "Games", "Tic-Tac-Toe"),
 }
 for folder in GAMES.values():
     sys.path.insert(0, folder)
-
-UTILITIES = {
-    "modmail_bot": os.path.join(os.path.dirname(__file__), "Mod-Mail"),
-}
-
 
 async def load_module(bot, module_name, folder, *, package=False):
     module_path = os.path.join(folder, "bot.py")
@@ -56,14 +51,8 @@ async def main():
     if not token:
         raise RuntimeError("DISCORD_TOKEN is not set. Add it to a .env file or environment variable.")
     async with bot:
-        for modules in (GAMES, UTILITIES):
-            for module_name, folder in modules.items():
-                await load_module(
-                    bot,
-                    module_name,
-                    folder,
-                    package=module_name == "modmail_bot",
-                )
+        for module_name, folder in GAMES.items():
+            await load_module(bot, module_name, folder)
         await bot.start(token)
 
 

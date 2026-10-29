@@ -7,7 +7,7 @@ from discord.ext import commands, tasks
 
 from rooms import Room
 
-VERSION = "2026-10-21-private-placement-dm-v3"
+VERSION = "2026-10-29"
 INACTIVITY_LIMIT = timedelta(days=2)
 THREAD_AUTO_ARCHIVE = 1440  # minutes (24h), Discord's max short-lived option
 
